@@ -7,21 +7,15 @@ const startBtn = document.getElementById("startBtn");
 const errorText = document.getElementById("errorText");
 const statusText = document.getElementById("status");
 const markerStatusText = document.getElementById("markerStatus");
-const cameraPreview = document.getElementById("cameraPreview");
+const modeLabel = document.getElementById("modeLabel");
+const targetDescription = document.getElementById("targetDescription");
 
-let previewStream = null;
 let mindarThree = null;
 let renderer = null;
 let scene = null;
 let camera = null;
-
-let anchor0 = null;
-let anchor1 = null;
-let anchor2 = null;
-
-let micBox = null;
-let angelPlane = null;
-let catsSphere = null;
+let anchor = null;
+let object3D = null;
 
 const clock = new THREE.Clock();
 
@@ -40,32 +34,6 @@ async function checkFile(url) {
   }
 }
 
-async function openCameraPreview() {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      facingMode: "user",
-      width: { ideal: 1280 },
-      height: { ideal: 720 }
-    },
-    audio: false
-  });
-
-  previewStream = stream;
-  cameraPreview.srcObject = stream;
-  cameraPreview.style.display = "block";
-  await cameraPreview.play();
-}
-
-function stopCameraPreview() {
-  if (previewStream) {
-    previewStream.getTracks().forEach(track => track.stop());
-    previewStream = null;
-  }
-  cameraPreview.pause();
-  cameraPreview.srcObject = null;
-  cameraPreview.style.display = "none";
-}
-
 async function loadTexture(path) {
   return new Promise((resolve, reject) => {
     const loader = new THREE.TextureLoader();
@@ -73,143 +41,145 @@ async function loadTexture(path) {
   });
 }
 
-async function initMindAR() {
-  await checkFile("./targets/multi.mind");
-  await checkFile("./assets/textures/angel-photo.png");
-  await checkFile("./assets/textures/github-texture.jpg");
-  await checkFile("./assets/textures/web-texture.png");
+function getTargetConfig() {
+  const params = new URLSearchParams(window.location.search);
+  const target = params.get("target");
+
+  if (target === "mic") {
+    return {
+      key: "mic",
+      label: "мікрофон",
+      mind: "./targets/mic.mind",
+      texture: "./assets/textures/github-texture.jpg",
+      description: "Наведи камеру на маркер мікрофона.",
+      createObject: async () => {
+        const texture = await loadTexture("./assets/textures/github-texture.jpg");
+        const material = new THREE.MeshBasicMaterial({ map: texture });
+        const cube = new THREE.Mesh(
+          new THREE.BoxGeometry(0.5, 0.5, 0.5),
+          [material, material, material, material, material, material]
+        );
+        cube.position.set(0, 0.2, 0);
+        return cube;
+      },
+      animate: (obj) => {
+        obj.rotation.x += 0.02;
+        obj.rotation.y += 0.03;
+      }
+    };
+  }
+
+  if (target === "angel") {
+    return {
+      key: "angel",
+      label: "ангельська розчіска",
+      mind: "./targets/angel-comb.mind",
+      texture: "./assets/textures/angel-photo.png",
+      description: "Наведи камеру на маркер ангельської розчіски.",
+      createObject: async () => {
+        const texture = await loadTexture("./assets/textures/angel-photo.png");
+        const material = new THREE.MeshBasicMaterial({
+          map: texture,
+          transparent: true,
+          side: THREE.DoubleSide
+        });
+        const plane = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.9, 0.9),
+          material
+        );
+        plane.position.set(0, 0.25, 0);
+        return plane;
+      },
+      animate: (obj, t) => {
+        obj.position.y = 0.25 + Math.sin(t * 2.0) * 0.12;
+      }
+    };
+  }
+
+  if (target === "cats") {
+    return {
+      key: "cats",
+      label: "піксельні котики",
+      mind: "./targets/pixel-cats.mind",
+      texture: "./assets/textures/web-texture.png",
+      description: "Наведи камеру на маркер піксельних котиків.",
+      createObject: async () => {
+        const texture = await loadTexture("./assets/textures/web-texture.png");
+        const material = new THREE.MeshBasicMaterial({ map: texture });
+        const sphere = new THREE.Mesh(
+          new THREE.SphereGeometry(0.28, 32, 32),
+          material
+        );
+        sphere.position.set(0, 0.3, 0);
+        return sphere;
+      },
+      animate: (obj, t) => {
+        const s = 1 + Math.sin(t * 3.0) * 0.25;
+        obj.scale.set(s, s, s);
+      }
+    };
+  }
+
+  return null;
+}
+
+async function initMindAR(config) {
+  await checkFile(config.mind);
+  await checkFile(config.texture);
 
   mindarThree = new MindARThree({
     container: container,
-    imageTargetSrc: "./targets/multi.mind",
-    maxTrack: 3,
+    imageTargetSrc: config.mind,
     uiScanning: true,
     uiLoading: true,
-    uiError: true
+    uiError: true,
+    filterMinCF: 0.0001,
+    filterBeta: 0.01
   });
 
   ({ renderer, scene, camera } = mindarThree);
 
-  anchor0 = mindarThree.addAnchor(0); // mic.png
-  anchor1 = mindarThree.addAnchor(1); // angel-comb.png
-  anchor2 = mindarThree.addAnchor(2); // pixel-cats.png
+  anchor = mindarThree.addAnchor(0);
+  object3D = await config.createObject();
+  anchor.group.add(object3D);
+  anchor.group.visible = false;
 
-  const angelTexture = await loadTexture("./assets/textures/angel-photo.png");
-  const githubTexture = await loadTexture("./assets/textures/github-texture.jpg");
-  const webTexture = await loadTexture("./assets/textures/web-texture.png");
-
-  // Маркер 0 — мікрофон
-  const micMaterial = new THREE.MeshBasicMaterial({
-    map: githubTexture
-  });
-
-  micBox = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.5, 0.5),
-    [micMaterial, micMaterial, micMaterial, micMaterial, micMaterial, micMaterial]
-  );
-  micBox.position.set(0, 0.2, 0);
-  anchor0.group.add(micBox);
-  anchor0.group.visible = false;
-
-  // Маркер 1 — ангельська розчіска
-  const angelMaterial = new THREE.MeshBasicMaterial({
-    map: angelTexture,
-    transparent: true,
-    side: THREE.DoubleSide
-  });
-
-  angelPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.9, 0.9),
-    angelMaterial
-  );
-  angelPlane.position.set(0, 0.25, 0);
-  anchor1.group.add(angelPlane);
-  anchor1.group.visible = false;
-
-  // Маркер 2 — піксельні котики
-  const catsMaterial = new THREE.MeshBasicMaterial({
-    map: webTexture
-  });
-
-  catsSphere = new THREE.Mesh(
-    new THREE.SphereGeometry(0.28, 32, 32),
-    catsMaterial
-  );
-  catsSphere.position.set(0, 0.3, 0);
-  anchor2.group.add(catsSphere);
-  anchor2.group.visible = false;
-
-  anchor0.onTargetFound = () => {
-    setMarkerStatus("знайдено: мікрофон ✅");
-    anchor0.group.visible = true;
+  anchor.onTargetFound = () => {
+    setMarkerStatus(`знайдено: ${config.label} ✅`);
+    anchor.group.visible = true;
   };
 
-  anchor0.onTargetLost = () => {
-    anchor0.group.visible = false;
-    setMarkerStatus("маркер мікрофона втрачено");
-  };
-
-  anchor1.onTargetFound = () => {
-    setMarkerStatus("знайдено: ангельська розчіска ✅");
-    anchor1.group.visible = true;
-  };
-
-  anchor1.onTargetLost = () => {
-    anchor1.group.visible = false;
-    setMarkerStatus("маркер розчіски втрачено");
-  };
-
-  anchor2.onTargetFound = () => {
-    setMarkerStatus("знайдено: піксельні котики ✅");
-    anchor2.group.visible = true;
-  };
-
-  anchor2.onTargetLost = () => {
-    anchor2.group.visible = false;
-    setMarkerStatus("маркер котиків втрачено");
+  anchor.onTargetLost = () => {
+    setMarkerStatus(`маркер "${config.label}" втрачено`);
+    anchor.group.visible = false;
   };
 }
 
 async function startARFlow() {
+  const config = getTargetConfig();
+
+  if (!config) {
+    errorText.textContent = "Не вибрано target. Використай ?target=mic або angel або cats";
+    setStatus("помилка");
+    return;
+  }
+
   try {
     startBtn.disabled = true;
     errorText.textContent = "";
-    setStatus("запит доступу до камери...");
-
-    await openCameraPreview();
-    setStatus("камера відкрита");
-
-    // ховаємо табличку одразу після успішного запуску камери
-    overlay.classList.add("hidden");
-
-    await new Promise(resolve => setTimeout(resolve, 1200));
-
-    stopCameraPreview();
-
     setStatus("запуск AR...");
-    await initMindAR();
+
+    await initMindAR(config);
     await mindarThree.start();
 
-    setStatus("AR активний, наведи на один із 3 маркерів");
+    overlay.classList.add("hidden");
+    setStatus(`AR активний: ${config.label}`);
 
     renderer.setAnimationLoop(() => {
       const t = clock.getElapsedTime();
 
-      // 1. Обертання
-      if (micBox && anchor0.group.visible) {
-        micBox.rotation.x += 0.02;
-        micBox.rotation.y += 0.03;
-      }
-
-      // 2. Переміщення
-      if (angelPlane && anchor1.group.visible) {
-        angelPlane.position.y = 0.25 + Math.sin(t * 2.0) * 0.12;
-      }
-
-      // 3. Масштабування
-      if (catsSphere && anchor2.group.visible) {
-        const s = 1 + Math.sin(t * 3.0) * 0.25;
-        catsSphere.scale.set(s, s, s);
+      if (object3D && anchor.group.visible) {
+        config.animate(object3D, t);
       }
 
       renderer.render(scene, camera);
@@ -223,14 +193,10 @@ async function startARFlow() {
 
     if (msg.includes("Permission") || msg.includes("NotAllowedError")) {
       errorText.textContent = "Браузер не дав доступ до камери.";
-    } else if (msg.includes("multi.mind")) {
-      errorText.textContent = "Не знайдено файл multi.mind у папці targets.";
-    } else if (msg.includes("angel-photo")) {
-      errorText.textContent = "Не знайдено фото янгола.";
-    } else if (msg.includes("github-texture")) {
-      errorText.textContent = "Не знайдено texture для мікрофона.";
-    } else if (msg.includes("web-texture")) {
-      errorText.textContent = "Не знайдено texture для піксельних котиків.";
+    } else if (msg.includes(".mind")) {
+      errorText.textContent = "Не знайдено .mind файл маркера.";
+    } else if (msg.includes("texture") || msg.includes(".png") || msg.includes(".jpg")) {
+      errorText.textContent = "Не знайдено зображення для текстури.";
     } else {
       errorText.textContent = "Не вдалося запустити AR.";
     }
@@ -238,5 +204,18 @@ async function startARFlow() {
     setStatus("помилка запуску");
   }
 }
+
+(function initPage() {
+  const config = getTargetConfig();
+
+  if (!config) {
+    modeLabel.textContent = "не вибрано";
+    targetDescription.textContent = "Відкрий сторінку через index.html і вибери потрібний маркер.";
+    return;
+  }
+
+  modeLabel.textContent = config.label;
+  targetDescription.textContent = `Натисни кнопку, дозволь доступ до камери, а потім наведи камеру на маркер: ${config.label}.`;
+})();
 
 startBtn.addEventListener("click", startARFlow);
