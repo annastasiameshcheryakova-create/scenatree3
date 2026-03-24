@@ -43,7 +43,7 @@ async function checkFile(url) {
 async function openCameraPreview() {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: {
-      facingMode: { ideal: "environment" },
+      facingMode: "user",
       width: { ideal: 1280 },
       height: { ideal: 720 }
     },
@@ -77,15 +77,15 @@ async function initMindAR() {
   await checkFile("./targets/multi.mind");
   await checkFile("./assets/textures/angel-photo.png");
   await checkFile("./assets/textures/github-texture.jpg");
-  await checkFile("./assets/textures/web-texture.jpg");
+  await checkFile("./assets/textures/web-texture.png");
 
   mindarThree = new MindARThree({
     container: container,
     imageTargetSrc: "./targets/multi.mind",
     maxTrack: 3,
-    uiScanning: false,
-    uiLoading: false,
-    uiError: false
+    uiScanning: true,
+    uiLoading: true,
+    uiError: true
   });
 
   ({ renderer, scene, camera } = mindarThree);
@@ -96,9 +96,9 @@ async function initMindAR() {
 
   const angelTexture = await loadTexture("./assets/textures/angel-photo.png");
   const githubTexture = await loadTexture("./assets/textures/github-texture.jpg");
-  const webTexture = await loadTexture("./assets/textures/web-texture.jpg");
+  const webTexture = await loadTexture("./assets/textures/web-texture.png");
 
-  // Маркер 0 — микрофон
+  // Маркер 0 — мікрофон
   const micMaterial = new THREE.MeshBasicMaterial({
     map: githubTexture
   });
@@ -111,7 +111,7 @@ async function initMindAR() {
   anchor0.group.add(micBox);
   anchor0.group.visible = false;
 
-  // Маркер 1 — ангельская расчёска
+  // Маркер 1 — ангельська розчіска
   const angelMaterial = new THREE.MeshBasicMaterial({
     map: angelTexture,
     transparent: true,
@@ -126,7 +126,7 @@ async function initMindAR() {
   anchor1.group.add(angelPlane);
   anchor1.group.visible = false;
 
-  // Маркер 2 — пиксельные котики
+  // Маркер 2 — піксельні котики
   const catsMaterial = new THREE.MeshBasicMaterial({
     map: webTexture
   });
@@ -179,7 +179,10 @@ async function startARFlow() {
     await openCameraPreview();
     setStatus("камера відкрита");
 
-    await new Promise(resolve => setTimeout(resolve, 800));
+    // ховаємо табличку одразу після успішного запуску камери
+    overlay.classList.add("hidden");
+
+    await new Promise(resolve => setTimeout(resolve, 1200));
 
     stopCameraPreview();
 
@@ -187,24 +190,23 @@ async function startARFlow() {
     await initMindAR();
     await mindarThree.start();
 
-    overlay.classList.add("hidden");
     setStatus("AR активний, наведи на один із 3 маркерів");
 
     renderer.setAnimationLoop(() => {
       const t = clock.getElapsedTime();
 
-      // Обертання
+      // 1. Обертання
       if (micBox && anchor0.group.visible) {
         micBox.rotation.x += 0.02;
         micBox.rotation.y += 0.03;
       }
 
-      // Переміщення
+      // 2. Переміщення
       if (angelPlane && anchor1.group.visible) {
         angelPlane.position.y = 0.25 + Math.sin(t * 2.0) * 0.12;
       }
 
-      // Масштабування
+      // 3. Масштабування
       if (catsSphere && anchor2.group.visible) {
         const s = 1 + Math.sin(t * 3.0) * 0.25;
         catsSphere.scale.set(s, s, s);
@@ -215,6 +217,7 @@ async function startARFlow() {
   } catch (error) {
     console.error(error);
     startBtn.disabled = false;
+    overlay.classList.remove("hidden");
 
     const msg = String(error.message || error);
 
