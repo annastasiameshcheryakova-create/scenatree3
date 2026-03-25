@@ -81,7 +81,7 @@
       border-radius: 12px;
       font-size: 14px;
       line-height: 1.45;
-      max-width: 420px;
+      max-width: 430px;
     }
 
     .hidden {
@@ -105,10 +105,10 @@
   <div id="overlay" class="overlay">
     <div class="card">
       <h1>Запуск AR</h1>
-      <p id="targetDescription">
-        Натисни кнопку, дозволь доступ до камери, а потім наведи камеру на маркер.
+      <p>
+        Натисни кнопку, дозволь доступ до камери, а потім наведи камеру на один із трьох маркерів.
       </p>
-      <button id="startBtn" class="btn">Увімкнути AR</button>
+      <button id="startBtn" class="btn">Увімкнути камеру та AR</button>
       <p id="errorText" style="margin-top:12px; min-height:20px;"></p>
     </div>
   </div>
@@ -116,7 +116,9 @@
   <div class="top-info">
     <div><strong>Статус:</strong> <span id="status">очікування</span></div>
     <div><strong>Маркер:</strong> <span id="markerStatus">не знайдено</span></div>
-    <div><strong>Режим:</strong> <span id="modeLabel">невідомо</span></div>
+    <div><strong>0:</strong> мікрофон</div>
+    <div><strong>1:</strong> ангельська розчіска</div>
+    <div><strong>2:</strong> піксельні котики</div>
   </div>
 
   <script type="module" src="main.js"></script>
