@@ -1,80 +1,37 @@
-import * as THREE from "three";
-import { MindARThree } from "mindar-image-three";
+import * as THREE from 'three';
+import { MindARThree } from 'mindar-image-three';
 
-const container = document.getElementById("container");
-const overlay = document.getElementById("overlay");
-const startBtn = document.getElementById("startBtn");
-const errorText = document.getElementById("errorText");
-const statusText = document.getElementById("status");
-const markerStatusText = document.getElementById("markerStatus");
-
-let mindarThree = null;
-let renderer = null;
-let scene = null;
-let camera = null;
-
-let anchor0 = null;
-let anchor1 = null;
-let anchor2 = null;
-
-let micBox = null;
-let angelPlane = null;
-let catsSphere = null;
-
-const clock = new THREE.Clock();
-
-function setStatus(text) {
-  statusText.textContent = text;
-}
-
-function setMarkerStatus(text) {
-  markerStatusText.textContent = text;
-}
-
-async function checkFile(url) {
-  const response = await fetch(url, { method: "GET" });
-  if (!response.ok) {
-    throw new Error(`Не знайдено файл: ${url}`);
+const CONFIG = {
+  "angel-comb": {
+    title: "Angel Comb · фото янгола",
+    mind: "./targets/angel-comb.mind",
+    mainTexture: "./assets/textures/angel-photo.png",
+    targetLabel: "angel-comb"
+  },
+  "mic": {
+    title: "Mic · котик біля мікрофона",
+    mind: "./targets/mic.mind",
+    mainTexture: "./assets/textures/mic-cat.png",
+    targetLabel: "mic"
+  },
+  "pixel-cats": {
+    title: "Pixel Cats · друга картинка",
+    mind: "./targets/pixel-cats.mind",
+    mainTexture: "./assets/textures/sleeping-girl.png",
+    targetLabel: "pixel-cats"
   }
-  return url;
-}
+};
 
-async function findExistingFile(paths) {
-  for (const path of paths) {
-    try {
-      await checkFile(path);
-      return path;
-    } catch (_) {}
-  }
-  throw new Error(`Не знайдено жоден файл із варіантів: ${paths.join(", ")}`);
-}
+const marker = new URLSearchParams(window.location.search).get("marker") || "angel-comb";
+const current = CONFIG[marker] || CONFIG["angel-comb"];
 
-async function loadTexture(path) {
-  return new Promise((resolve, reject) => {
-    const loader = new THREE.TextureLoader();
-    loader.load(path, resolve, undefined, reject);
-  });
-}
+document.getElementById("sceneTitle").textContent = current.title;
+document.getElementById("previewLink").href = `camera.html?marker=${marker}`;
 
-async function initMindAR() {
-  const mindPath = "./targets/multi.mind";
-  const angelPath = "./assets/textures/angel-photo.png";
-  const githubPath = await findExistingFile([
-    "./assets/textures/github-texture.jpg",
-    "./assets/textures/github-texture.png",
-  ]);
-  const webPath = await findExistingFile([
-    "./assets/textures/web-texture.jpg",
-    "./assets/textures/web-texture.png",
-  ]);
-
-  await checkFile(mindPath);
-  await checkFile(angelPath);
-
-  mindarThree = new MindARThree({
-    container: container,
-    imageTargetSrc: mindPath,
-    maxTrack: 3,
+const start = async () => {
+  const mindarThree = new MindARThree({
+    container: document.querySelector("#container"),
+    imageTargetSrc: current.mind,
     uiScanning: true,
     uiLoading: true,
     uiError: true,
@@ -82,135 +39,91 @@ async function initMindAR() {
     filterBeta: 0.01,
   });
 
-  ({ renderer, scene, camera } = mindarThree);
+  const { renderer, scene, camera } = mindarThree;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-  anchor0 = mindarThree.addAnchor(0); // mic.png
-  anchor1 = mindarThree.addAnchor(1); // angel-comb.png
-  anchor2 = mindarThree.addAnchor(2); // pixel-cats.png
+  const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1.5);
+  scene.add(light);
 
-  const angelTexture = await loadTexture(angelPath);
-  const githubTexture = await loadTexture(githubPath);
-  const webTexture = await loadTexture(webPath);
+  const textureLoader = new THREE.TextureLoader();
+  const [mainTexture, githubTexture, webTexture] = await Promise.all([
+    textureLoader.loadAsync(current.mainTexture),
+    textureLoader.loadAsync("./assets/textures/github-texture.jpg"),
+    textureLoader.loadAsync("./assets/textures/web-texture.png"),
+  ]);
 
-  // Маркер 0 — мікрофон
-  const micMaterial = new THREE.MeshBasicMaterial({ map: githubTexture });
-  micBox = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.5, 0.5),
-    [micMaterial, micMaterial, micMaterial, micMaterial, micMaterial, micMaterial]
-  );
-  micBox.position.set(0, 0.2, 0);
-  anchor0.group.add(micBox);
-  anchor0.group.visible = false;
+  [mainTexture, githubTexture, webTexture].forEach((texture) => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  });
 
-  // Маркер 1 — ангельська розчіска
-  const angelMaterial = new THREE.MeshBasicMaterial({
-    map: angelTexture,
+  const anchor = mindarThree.addAnchor(0);
+
+  // Object A: movement (plane with main image)
+  const planeGeometry = new THREE.PlaneGeometry(1.05, 0.7);
+  const planeMaterial = new THREE.MeshBasicMaterial({
+    map: mainTexture,
     transparent: true,
     side: THREE.DoubleSide,
   });
-  angelPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.9, 0.9),
-    angelMaterial
-  );
-  angelPlane.position.set(0, 0.25, 0);
-  anchor1.group.add(angelPlane);
-  anchor1.group.visible = false;
+  const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+  plane.position.set(0, 0.2, 0);
+  anchor.group.add(plane);
 
-  // Маркер 2 — піксельні котики
-  const catsMaterial = new THREE.MeshBasicMaterial({ map: webTexture });
-  catsSphere = new THREE.Mesh(
-    new THREE.SphereGeometry(0.28, 32, 32),
-    catsMaterial
-  );
-  catsSphere.position.set(0, 0.3, 0);
-  anchor2.group.add(catsSphere);
-  anchor2.group.visible = false;
+  // Object B: rotation (box with GitHub texture)
+  const boxGeometry = new THREE.BoxGeometry(0.28, 0.28, 0.28);
+  const boxMaterial = new THREE.MeshBasicMaterial({ map: githubTexture });
+  const box = new THREE.Mesh(boxGeometry, boxMaterial);
+  box.position.set(-0.48, -0.12, 0.06);
+  anchor.group.add(box);
 
-  anchor0.onTargetFound = () => {
-    setMarkerStatus("знайдено: мікрофон ✅");
-    anchor0.group.visible = true;
-  };
+  // Object C: scaling (sphere with web texture)
+  const sphereGeometry = new THREE.SphereGeometry(0.17, 32, 32);
+  const sphereMaterial = new THREE.MeshBasicMaterial({ map: webTexture });
+  const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+  sphere.position.set(0.48, -0.02, 0.06);
+  anchor.group.add(sphere);
 
-  anchor0.onTargetLost = () => {
-    anchor0.group.visible = false;
-    setMarkerStatus("маркер мікрофона втрачено");
-  };
+  // Extra layout element: ring base for cleaner composition
+  const ringGeometry = new THREE.TorusGeometry(0.58, 0.025, 16, 60);
+  const ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 });
+  const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = -0.22;
+  anchor.group.add(ring);
 
-  anchor1.onTargetFound = () => {
-    setMarkerStatus("знайдено: ангельська розчіска ✅");
-    anchor1.group.visible = true;
-  };
+  const clock = new THREE.Clock();
 
-  anchor1.onTargetLost = () => {
-    anchor1.group.visible = false;
-    setMarkerStatus("маркер розчіски втрачено");
-  };
+  await mindarThree.start();
 
-  anchor2.onTargetFound = () => {
-    setMarkerStatus("знайдено: піксельні котики ✅");
-    anchor2.group.visible = true;
-  };
+  renderer.setAnimationLoop(() => {
+    const t = clock.getElapsedTime();
 
-  anchor2.onTargetLost = () => {
-    anchor2.group.visible = false;
-    setMarkerStatus("маркер котиків втрачено");
-  };
-}
+    // a) movement
+    plane.position.y = 0.2 + Math.sin(t * 1.5) * 0.08;
+    plane.rotation.z = Math.sin(t * 0.9) * 0.08;
 
-async function startARFlow() {
-  try {
-    startBtn.disabled = true;
-    errorText.textContent = "";
-    setStatus("запуск AR...");
+    // b) rotation
+    box.rotation.x += 0.02;
+    box.rotation.y += 0.03;
 
-    await initMindAR();
-    await mindarThree.start();
+    // c) scaling
+    const s = 1 + 0.22 * (0.5 + 0.5 * Math.sin(t * 2.2));
+    sphere.scale.set(s, s, s);
 
-    overlay.classList.add("hidden");
-    setStatus("AR активний, наведи камеру на один із 3 маркерів");
+    ring.rotation.z += 0.01;
 
-    renderer.setAnimationLoop(() => {
-      const t = clock.getElapsedTime();
+    renderer.render(scene, camera);
+  });
 
-      if (micBox && anchor0.group.visible) {
-        micBox.rotation.x += 0.02;
-        micBox.rotation.y += 0.03;
-      }
-
-      if (angelPlane && anchor1.group.visible) {
-        angelPlane.position.y = 0.25 + Math.sin(t * 2.0) * 0.12;
-      }
-
-      if (catsSphere && anchor2.group.visible) {
-        const s = 1 + Math.sin(t * 3.0) * 0.25;
-        catsSphere.scale.set(s, s, s);
-      }
-
-      renderer.render(scene, camera);
-    });
-  } catch (error) {
-    console.error(error);
-    startBtn.disabled = false;
-    overlay.classList.remove("hidden");
-
-    const msg = String(error.message || error);
-
-    if (msg.includes("Permission") || msg.includes("NotAllowedError")) {
-      errorText.textContent = "Браузер не дав доступ до камери.";
-    } else if (msg.includes("multi.mind")) {
-      errorText.textContent = "Не знайдено файл multi.mind у папці targets.";
-    } else if (msg.includes("angel-photo")) {
-      errorText.textContent = "Не знайдено фото янгола.";
-    } else if (msg.includes("github-texture")) {
-      errorText.textContent = "Не знайдено texture для мікрофона.";
-    } else if (msg.includes("web-texture") || msg.includes("жоден файл із варіантів")) {
-      errorText.textContent = "Не знайдено texture для піксельних котиків.";
-    } else {
-      errorText.textContent = "Не вдалося запустити AR.";
+  window.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      mindarThree.stop();
+      renderer.setAnimationLoop(null);
     }
+  });
+};
 
-    setStatus("помилка запуску");
-  }
-}
-
-startBtn.addEventListener("click", startARFlow);
+start().catch((error) => {
+  console.error(error);
+  document.getElementById("sceneTitle").textContent = "Не вдалося запустити AR. Перевірте .mind файл у папці /targets.";
+});
